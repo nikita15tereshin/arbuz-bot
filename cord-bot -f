@@ -1,0 +1,20 @@
+[0;1;32m●[0m discord-bot.service - Discord Arbuz Bot
+     Loaded: loaded (]8;;file://vps/etc/systemd/system/discord-bot.service/etc/systemd/system/discord-bot.service]8;;; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+     Active: [0;1;32mactive (running)[0m since Mon 2026-02-23 11:58:13 UTC; 42min ago
+   Main PID: 16802 (python)
+      Tasks: 3 (limit: 3474)
+     Memory: 33.1M (peak: 33.4M)
+        CPU: 696ms
+     CGroup: /system.slice/discord-bot.service
+             └─[0;38;5;245m16802 /opt/discord-bot/venv/bin/python /opt/discord-bot/bot.py[0m
+
+Feb 23 12:03:01 vps python[16802]: Ignoring exception in command None:
+Feb 23 12:03:01 vps python[16802]: discord.ext.commands.errors.CommandNotFound: Command "!!!!!!!" is not found
+Feb 23 12:03:22 vps python[16802]: Ignoring exception in command None:
+Feb 23 12:03:22 vps python[16802]: discord.ext.commands.errors.CommandNotFound: Command "ARBUZ" is not found
+Feb 23 12:03:33 vps python[16802]: Ignoring exception in command None:
+Feb 23 12:03:33 vps python[16802]: discord.ext.commands.errors.CommandNotFound: Command "arbuz" is not found
+Feb 23 12:32:33 vps python[16802]: Ignoring exception in command None:
+Feb 23 12:32:33 vps python[16802]: discord.ext.commands.errors.CommandNotFound: Command "arbuz" is not found
+Feb 23 12:32:44 vps python[16802]: Ignoring exception in command None:
+Feb 23 12:32:44 vps python[16802]: discord.ext.commands.errors.CommandNotFound: Command "arbuz" is not found
