@@ -464,42 +464,45 @@ async def top_cmd(ctx: commands.Context):
 
     date = today_str()
     rows = get_day_rolls(date)
-    
+    if not rows:
+        await ctx.send("Сегодня ещё никто не кидал `!arbuz`.")
+        return
+
     guild = bot.get_guild(GUILD_ID)
 
-finalized = [r for r in rows if int(r["finalized"]) == 1]
-pending = [r for r in rows if int(r["finalized"]) == 0]
+    finalized = [r for r in rows if int(r["finalized"]) == 1]
+    pending   = [r for r in rows if int(r["finalized"]) == 0]
 
-normal = [r for r in finalized if r["mode"] != "anarchy"]   # 1..20
-anarchy = [r for r in finalized if r["mode"] == "anarchy"]  # 1..100
+    normal  = [r for r in finalized if r["mode"] != "anarchy"]   # 1..20
+    anarchy = [r for r in finalized if r["mode"] == "anarchy"]   # 1..100
 
-text = [f"🏆 **Лидерборд за {date} (МСК)**"]
+    text = [f"🏆 **Лидерборд за {date} (МСК)**"]
 
-if pending:
-    pend_users = ", ".join(display_name(guild, r["user_id"]) for r in pending)
-    text.append(f"⏳ Ждут решения `!да/!нет`: {pend_users}")
+    if pending:
+        pend_users = ", ".join(display_name(guild, r["user_id"]) for r in pending)
+        text.append(f"⏳ Ждут решения `!да/!нет`: {pend_users}")
 
-# Обычный топ (1–20)
-text.append("")
-text.append("🎲 **Обычные броски (1–20):**")
-if normal:
-    normal_sorted = sorted(normal, key=lambda r: r["value"], reverse=True)
-    for i, r in enumerate(normal_sorted, 1):
-        text.append(f"{i}. {display_name(guild, r['user_id'])} — **{r['value']}**")
-else:
-    text.append("— сегодня нет финализированных обычных бросков")
+    # --- Нормальный топ 1..20 ---
+    text.append("")
+    text.append("🎲 **Обычный режим (1–20):**")
+    if normal:
+        normal_sorted = sorted(normal, key=lambda r: r["value"], reverse=True)
+        for i, r in enumerate(normal_sorted, 1):
+            text.append(f"{i}. {display_name(guild, r['user_id'])} — **{r['value']}**")
+    else:
+        text.append("— сегодня никто не кидал в обычном режиме")
 
-# Топ анархии (1–100)
-text.append("")
-text.append("🍉 **Арбузная анархия (1–100):**")
-if anarchy:
-    anarchy_sorted = sorted(anarchy, key=lambda r: r["value"], reverse=True)
-    for i, r in enumerate(anarchy_sorted, 1):
-        text.append(f"{i}. {display_name(guild, r['user_id'])} — **{r['value']}**")
-else:
-    text.append("— сегодня никто не включал анархию")
+    # --- Анархия 1..100 ---
+    text.append("")
+    text.append("🍉 **Арбузная анархия (1–100):**")
+    if anarchy:
+        anarchy_sorted = sorted(anarchy, key=lambda r: r["value"], reverse=True)
+        for i, r in enumerate(anarchy_sorted, 1):
+            text.append(f"{i}. {display_name(guild, r['user_id'])} — **{r['value']}**")
+    else:
+        text.append("— сегодня никто не включал анархию")
 
-    # распределение 1..20
+    # --- Распределение 1..20 (только normal) ---
     dist = {i: 0 for i in range(1, 21)}
     for r in normal:
         v = r["value"]
@@ -513,11 +516,12 @@ else:
     else:
         text.append("— никто не выбил число в диапазоне 1–20")
 
-    # кто выбил 100 / никто
-    who100 = [mention(r["user_id"]) for r in finalized if r["value"] == 100]
+    # --- Кто выбил 100 (только anarchy, без пинга) ---
+    who100_ids = [r["user_id"] for r in anarchy if r["value"] == 100]
     text.append("")
-    if who100:
-        text.append(f"💯 **Кто-то выбил 100**: {', '.join(who100)}")
+    if who100_ids:
+        who100_names = ", ".join(display_name(guild, uid) for uid in who100_ids)
+        text.append(f"💯 **Кто-то выбил 100**: {who100_names}")
     else:
         text.append("💯 **Никто не выбил 100.**")
 
