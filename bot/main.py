@@ -202,37 +202,27 @@ def display_name(guild: discord.Guild | None, uid: int) -> str:
 # -----------------------
 # TIEBREAK
 # -----------------------
-
-def tiebreak_state(date: str | None = None):
+def tiebreak_state(date: str):
     """
-    Если date=None — возвращаем активный тай-брейк (какой бы он ни был).
-    Если date задан — возвращаем только если active_date == date.
-    Также: если дедлайн истёк — автоматически очищаем тай-брейк и возвращаем None.
+    meta keys:
+    tiebreak_active_date
+    tiebreak_round
+    tiebreak_users (json list[int])
+    tiebreak_deadline (iso)
     """
     active_date = meta_get("tiebreak_active_date")
-    if not active_date:
-        return None
-
-    if date is not None and active_date != date:
+    if active_date != date:
         return None
 
     try:
         round_num = int(meta_get("tiebreak_round") or "0")
         users = json.loads(meta_get("tiebreak_users") or "[]")
-        deadline_iso = meta_get("tiebreak_deadline")
-
-        # дедлайн мог отсутствовать/сломаться
-        if deadline_iso:
-            deadline_dt = datetime.datetime.fromisoformat(deadline_iso)
-            if now_msk() > deadline_dt:
-                tiebreak_clear()
-                return None
-
+        deadline = meta_get("tiebreak_deadline")
         return {
             "date": active_date,
             "round": round_num,
             "users": users,
-            "deadline": deadline_iso,
+            "deadline": deadline
         }
     except Exception:
         return None
@@ -371,26 +361,27 @@ async def arbuz_cmd(ctx: commands.Context):
 
     date = today_str()
 
-    # Тай-брейк может быть за вчерашнюю дату — берём активный без привязки к today_str()
-    st = tiebreak_state(None)
-    if st and ctx.author.id in st["users"]:
-        tb_date = st["date"]
-        round_num = st["round"]
+    # Тай-брейк?
+    st = tiebreak_state(date)
+    if st:
+        # в тайбрейке могут кидать только участники тайбрейка
+        if ctx.author.id not in st["users"]:
+            await ctx.send(" Сейчас идёт тай-брейк. Кидать могут только участники ничьей.")
+            return
 
-    if tiebreak_user_already_rolled(tb_date, round_num, ctx.author.id):
-        await ctx.send("⛔ Ты уже кинул в этом раунде тай-брейка.")
+        round_num = st["round"]
+        if tiebreak_user_already_rolled(date, round_num, ctx.author.id):
+            await ctx.send(" Ты уже кинул в этом раунде тай-брейка.")
+            return
+
+        value = random.randint(1, 20)
+        tiebreak_record(date, round_num, ctx.author.id, value)
+        await ctx.send(f"{ctx.author.mention} (тай-брейк раунд {round_num}) выбросил **{value}** 🎲")
+
+        await maybe_finish_tiebreak(date)
         return
 
-    value = random.randint(1, 20)
-    tiebreak_record(tb_date, round_num, ctx.author.id, value)
-    await ctx.send(f"{ctx.author.mention} (тай-брейк раунд {round_num}) выбросил **{value}** 🎲")
-
-    await maybe_finish_tiebreak(tb_date)
-    return
-
-    # -----------------------
     # обычный день
-    # -----------------------
     existing = get_user_roll(date, ctx.author.id)
     if existing:
         if int(existing["finalized"]) == 0 and int(existing["value"]) == 1:
