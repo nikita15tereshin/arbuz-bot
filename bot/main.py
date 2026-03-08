@@ -373,10 +373,8 @@ async def arbuz_cmd(ctx: commands.Context):
 
     today = today_str()
 
-    # -----------------------
     # Если пользователь участвует в активном тай-брейке,
     # то этот !arbuz идёт в тай-брейк и НЕ считается обычным броском дня
-    # -----------------------
     st = tiebreak_state(None)
     if st and ctx.author.id in st["users"]:
         tb_date = st["date"]
@@ -393,9 +391,9 @@ async def arbuz_cmd(ctx: commands.Context):
         await maybe_finish_tiebreak(tb_date)
         return
 
-    # -----------------------
+
     # Обычный дневной бросок
-    # -----------------------
+
     existing = get_user_roll(today, ctx.author.id)
     if existing:
         if int(existing["finalized"]) == 0 and int(existing["value"]) == 1:
