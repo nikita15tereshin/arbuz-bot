@@ -201,10 +201,7 @@ def tiebreak_state(date: str | None = None):
     Если дедлайн истёк — очищаем тай-брейк и возвращаем None.
     """
     active_date = meta_get("tiebreak_active_date")
-    if not active_date:
-        return None
-
-    if date is not None and active_date != date:
+    if active_date != date:
         return None
 
     try:
@@ -222,7 +219,7 @@ def tiebreak_state(date: str | None = None):
             "date": active_date,
             "round": round_num,
             "users": users,
-            "deadline": deadline_iso,
+            "deadline": deadline
         }
     except Exception:
         return None
