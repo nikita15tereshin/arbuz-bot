@@ -541,7 +541,8 @@ async def top_cmd(ctx: commands.Context):
     normal = [r for r in finalized if r["mode"] == "normal"]
     anarchy = [r for r in finalized if r["mode"] == "anarchy"]
 
-    text = [f"🏆 **Лидерборд за {date} (МСК)**"]
+    display_date = (datetime.date.fromisoformat(date) + datetime.timedelta(days=1)).isoformat()
+    text = [f"🏆 **Лидерборд за {display_date} (МСК)**"]
 
     if pending:
         pend_users = ", ".join(display_name(guild, r["user_id"]) for r in pending)
