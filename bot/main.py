@@ -21,7 +21,7 @@ TZ = ZoneInfo("Europe/Moscow")  # всё считаем по МСК
 ANARCHY_TIMEOUT_SEC = 3600
 
 # сколько даём времени на переброс при ничьей (сек)
-TIEBREAK_TIMEOUT_SEC = 12 * 3600  # 43200
+TIEBREAK_TIMEOUT_SEC = 3600
 
 # режим теста: сбрасывать "день" раз в N минут (например 1)
 # В проде оставь None (тогда будет строго 00:00 МСК)
@@ -53,9 +53,9 @@ def tiebreak_deadline_for_date(date_str: str) -> datetime.datetime:
     next_day = day + datetime.timedelta(days=1)
     return datetime.datetime.combine(next_day, datetime.time(12, 0, 0), tzinfo=TZ)
 
-# -----------------------
+
 # DISCORD
-# -----------------------
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -85,7 +85,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS rolls (
                 date TEXT NOT NULL,          -- YYYY-MM-DD (по МСК)
                 user_id INTEGER NOT NULL,
-                value INTEGER NOT NULL,       -- финал: 1..20 или 1..100 (анархия)
+                value INTEGER NOT NULL,       -- финал: 1..20
                 mode TEXT NOT NULL,           -- normal | anarchy
                 finalized INTEGER NOT NULL,   -- 0/1 (если выпало 1 и ждём !да/!нет -> 0)
                 created_at TEXT NOT NULL,
@@ -168,24 +168,21 @@ def get_day_rolls(date: str):
             WHERE date=?
         """, (date,)).fetchall()
         return [dict(r) for r in rows]
+    
 
-def has_any_100(date: str) -> bool:
-    rows = get_day_rolls(date)
-    return any(r["value"] == 100 for r in rows)
 
 def top_candidates(date: str):
     rows = get_day_rolls(date)
     if not rows:
         return []
 
-    # только финализированные И только обычные броски
     rows = [
         r for r in rows
         if int(r["finalized"]) == 1 and r["mode"] == "normal"
     ]
     if not rows:
         return []
-
+    
     max_val = max(r["value"] for r in rows)
     winners = [r for r in rows if r["value"] == max_val]
     return winners
@@ -193,28 +190,15 @@ def top_candidates(date: str):
 def mention(uid: int) -> str:
     return f"<@{uid}>"
 
-def display_name(guild: discord.Guild | None, uid: int) -> str:
-    """
-    Возвращает ник/username без пинга.
-    Если пользователь в гильдии найден — берём display_name (серверный ник),
-    иначе просто 'user:<id>' как фоллбек.
-    """
-    if guild:
-        m = guild.get_member(uid)
-        if m:
-            return m.display_name  # ник на сервере
-    return f"user:{uid}"
 
-# -----------------------
 # TIEBREAK
-# -----------------------
-def tiebreak_state(date: str):
+
+
+def tiebreak_state(date: str | None = None):
     """
-    meta keys:
-    tiebreak_active_date
-    tiebreak_round
-    tiebreak_users (json list[int])
-    tiebreak_deadline (iso)
+    Если date=None — возвращаем активный тай-брейк, какой бы он ни был.
+    Если date задан — возвращаем только если active_date == date.
+    Если дедлайн истёк — очищаем тай-брейк и возвращаем None.
     """
     active_date = meta_get("tiebreak_active_date")
     if active_date != date:
@@ -223,7 +207,14 @@ def tiebreak_state(date: str):
     try:
         round_num = int(meta_get("tiebreak_round") or "0")
         users = json.loads(meta_get("tiebreak_users") or "[]")
-        deadline = meta_get("tiebreak_deadline")
+        deadline_iso = meta_get("tiebreak_deadline")
+
+        if deadline_iso:
+            deadline_dt = datetime.datetime.fromisoformat(deadline_iso)
+            if now_msk() > deadline_dt:
+                tiebreak_clear()
+                return None
+
         return {
             "date": active_date,
             "round": round_num,
@@ -286,7 +277,6 @@ async def maybe_finish_tiebreak(date: str):
     res = tiebreak_round_results(date, round_num)
     if len(res) < len(users):
         return
-
     max_val = max(r["value"] for r in res)
     winners = [r for r in res if r["value"] == max_val]
 
@@ -303,10 +293,15 @@ async def maybe_finish_tiebreak(date: str):
 
         ok = await set_winner_role(winner_id)
         if ch:
-            await ch.send("🍉 Роль **АРБУЗ** выдана победителю тай-брейка." if ok else "⚠️ Не смог выдать роль (проверь права/позицию роли).")
+            await ch.send(
+                "🍉 Роль **АРБУЗ** выдана победителю тай-брейка."
+                if ok else
+                "⚠️ Не смог выдать роль (проверь права/позицию роли)."
+            )
 
         tiebreak_clear()
     else:
+        
         tied_users = [r["user_id"] for r in winners]
         meta_set("tiebreak_users", json.dumps(tied_users))
         tiebreak_next_round(date)
@@ -376,14 +371,14 @@ async def arbuz_cmd(ctx: commands.Context):
 
         value = random.randint(1, 20)
         tiebreak_record(tb_date, round_num, ctx.author.id, value)
-        await ctx.send(f"{ctx.author.mention} (тай-брейк за {tb_date}, раунд {round_num}) выбросил **{value}** 🎲")
+        await ctx.send(
+            f"{ctx.author.mention} (тай-брейк за {tb_date}, раунд {round_num}) выбросил **{value}** 🎲"
+        )
 
         await maybe_finish_tiebreak(tb_date)
         return
 
-
     # Обычный дневной бросок
-
     existing = get_user_roll(today, ctx.author.id)
     if existing:
         if int(existing["finalized"]) == 0 and int(existing["value"]) == 1:
@@ -391,11 +386,13 @@ async def arbuz_cmd(ctx: commands.Context):
                 f"{ctx.author.mention}, ты уже выбил **1** и ждёшь решение: `!да` / `!нет`."
             )
         else:
-            await ctx.send(f"{ctx.author.mention}, ты уже кидал сегодня. Твой результат: **{existing['value']}**.")
+            await ctx.send(
+                f"{ctx.author.mention}, ты уже кидал сегодня. Твой результат: **{existing['value']}**."
+            )
         return
-
+    
     value = random.randint(1, 20)
-
+    
     if value == 1:
         insert_roll(today, ctx.author.id, 1, "normal", 0)
         await ctx.send(
@@ -416,10 +413,10 @@ async def yes_cmd(ctx: commands.Context):
     date = today_str()
     row = get_user_roll(date, ctx.author.id)
     if not row:
-        await ctx.send("Сначала кинь `!arbuz` ")
+        await ctx.send("Сначала кинь `!arbuz` 🙂")
         return
     if int(row["finalized"]) == 1:
-        await ctx.send("Твой бросок уже финализирован. Сегодня второй попытки нет ")
+        await ctx.send("Твой бросок уже финализирован. Сегодня второй попытки нет 🙂")
         return
     if int(row["value"]) != 1:
         await ctx.send("`!да` работает только если ты выбросил 1.")
@@ -435,7 +432,7 @@ async def yes_cmd(ctx: commands.Context):
 
     value = random.randint(1, 20)
     update_roll(date, ctx.author.id, value, "anarchy", 1)
-    await ctx.send(f"{ctx.author.mention} включил арбузную анархию и выбросил **{value}** 🍉")
+    await ctx.send(f"{ctx.author.mention} включил арбузную анархию и выбросил **{value}** 💥🍉")
 
 @bot.command(name="нет")
 async def no_cmd(ctx: commands.Context):
@@ -445,10 +442,10 @@ async def no_cmd(ctx: commands.Context):
     date = today_str()
     row = get_user_roll(date, ctx.author.id)
     if not row:
-        await ctx.send("Сначала кинь `!arbuz` ")
+        await ctx.send("Сначала кинь `!arbuz` 🙂")
         return
     if int(row["finalized"]) == 1:
-        await ctx.send("Твой бросок уже финализирован. Сегодня второй попытки нет ")
+        await ctx.send("Твой бросок уже финализирован. Сегодня второй попытки нет 🙂")
         return
     if int(row["value"]) != 1:
         await ctx.send("`!нет` работает только если ты выбросил 1.")
@@ -468,41 +465,36 @@ async def top_cmd(ctx: commands.Context):
         await ctx.send("Сегодня ещё никто не кидал `!arbuz`.")
         return
 
-    guild = bot.get_guild(GUILD_ID)
-
     finalized = [r for r in rows if int(r["finalized"]) == 1]
-    pending   = [r for r in rows if int(r["finalized"]) == 0]
+    pending = [r for r in rows if int(r["finalized"]) == 0]
 
-    normal  = [r for r in finalized if r["mode"] != "anarchy"]   # 1..20
-    anarchy = [r for r in finalized if r["mode"] == "anarchy"]   # 1..100
+    normal = [r for r in finalized if r["mode"] == "normal"]
+    anarchy = [r for r in finalized if r["mode"] == "anarchy"]
 
     text = [f"🏆 **Лидерборд за {date} (МСК)**"]
 
     if pending:
-        pend_users = ", ".join(display_name(guild, r["user_id"]) for r in pending)
+        pend_users = ", ".join(mention(r["user_id"]) for r in pending)
         text.append(f"⏳ Ждут решения `!да/!нет`: {pend_users}")
 
-    # --- Нормальный топ 1..20 ---
     text.append("")
-    text.append("🎲 **Обычный режим (1–20):**")
+    text.append("🍉 **Топ на роль АРБУЗ (только обычные броски 1–20):**")
     if normal:
         normal_sorted = sorted(normal, key=lambda r: r["value"], reverse=True)
         for i, r in enumerate(normal_sorted, 1):
-            text.append(f"{i}. {display_name(guild, r['user_id'])} — **{r['value']}**")
+            text.append(f"{i}. {mention(r['user_id'])} — **{r['value']}**")
     else:
-        text.append("— сегодня никто не кидал в обычном режиме")
+        text.append("— сегодня никто не сделал обычный финальный бросок")
 
-    # --- Анархия 1..100 ---
     text.append("")
-    text.append("🍉 **Арбузная анархия (1–100):**")
+    text.append("🎲 **Арбузная анархия (1–20, отдельно от розыгрыша роли):**")
     if anarchy:
         anarchy_sorted = sorted(anarchy, key=lambda r: r["value"], reverse=True)
         for i, r in enumerate(anarchy_sorted, 1):
-            text.append(f"{i}. {display_name(guild, r['user_id'])} — **{r['value']}**")
+            text.append(f"{i}. {mention(r['user_id'])} — **{r['value']}**")
     else:
         text.append("— сегодня никто не включал анархию")
 
-    # --- Распределение 1..20 (только normal) ---
     dist = {i: 0 for i in range(1, 21)}
     for r in normal:
         v = r["value"]
@@ -510,20 +502,19 @@ async def top_cmd(ctx: commands.Context):
             dist[v] += 1
 
     text.append("")
-    text.append("🔢 **Распределение (1–20):**")
+    text.append("🔢 **Распределение обычных бросков (1–20):**")
     if any(dist.values()):
         text.append(" ".join([f"{k}:{dist[k]}" for k in range(1, 21)]))
     else:
         text.append("— никто не выбил число в диапазоне 1–20")
 
-    # --- Кто выбил 100 (только anarchy, без пинга) ---
-    who100_ids = [r["user_id"] for r in anarchy if r["value"] == 100]
-    text.append("")
-    if who100_ids:
-        who100_names = ", ".join(display_name(guild, uid) for uid in who100_ids)
-        text.append(f"💯 **Кто-то выбил 100**: {who100_names}")
-    else:
-        text.append("💯 **Никто не выбил 100.**")
+    st = tiebreak_state(None)
+    if st:
+        text.append("")
+        text.append(
+            f"⚔️ **Активный тай-брейк** за {st['date']}, "
+            f"раунд {st['round']}: " + ", ".join(mention(uid) for uid in st["users"])
+        )
 
     await ctx.send("\n".join(text))
 
