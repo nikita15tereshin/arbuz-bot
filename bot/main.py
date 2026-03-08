@@ -208,37 +208,27 @@ def display_name(guild: discord.Guild | None, uid: int) -> str:
 # -----------------------
 # TIEBREAK
 # -----------------------
-
-def tiebreak_state(date: str | None = None):
+def tiebreak_state(date: str):
     """
-    Если date=None — возвращаем активный тай-брейк (какой бы он ни был).
-    Если date задан — возвращаем только если active_date == date.
-    Также: если дедлайн истёк — автоматически очищаем тай-брейк и возвращаем None.
+    meta keys:
+    tiebreak_active_date
+    tiebreak_round
+    tiebreak_users (json list[int])
+    tiebreak_deadline (iso)
     """
     active_date = meta_get("tiebreak_active_date")
-    if not active_date:
-        return None
-
-    if date is not None and active_date != date:
+    if active_date != date:
         return None
 
     try:
         round_num = int(meta_get("tiebreak_round") or "0")
         users = json.loads(meta_get("tiebreak_users") or "[]")
-        deadline_iso = meta_get("tiebreak_deadline")
-
-        # дедлайн мог отсутствовать/сломаться
-        if deadline_iso:
-            deadline_dt = datetime.datetime.fromisoformat(deadline_iso)
-            if now_msk() > deadline_dt:
-                tiebreak_clear()
-                return None
-
+        deadline = meta_get("tiebreak_deadline")
         return {
             "date": active_date,
             "round": round_num,
             "users": users,
-            "deadline": deadline_iso,
+            "deadline": deadline
         }
     except Exception:
         return None
